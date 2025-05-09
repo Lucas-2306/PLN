@@ -6,3 +6,6 @@ nltk
 gensim==4.3.3
 unidecode
 flask
+praw
+requests
+matplotlib

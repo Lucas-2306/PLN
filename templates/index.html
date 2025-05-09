@@ -14,6 +14,7 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      overflow-x: hidden;  /* Prevent horizontal scrolling */
     }
 
     .container {
@@ -23,6 +24,8 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       text-align: center;
       width: 400px;
+      max-height: 80vh; /* Limiting the height of the container */
+      overflow-y: auto; /* Makes the container scrollable if content overflows */
     }
 
     h1 {
@@ -30,15 +33,13 @@
       margin-bottom: 20px;
     }
 
-    textarea {
+    textarea, input {
       width: 100%;
-      height: 100px;
       padding: 10px;
+      margin-bottom: 20px;
       border: 1px solid #ccc;
       border-radius: 8px;
-      resize: none;
       font-size: 16px;
-      margin-bottom: 20px;
     }
 
     button {
@@ -50,10 +51,30 @@
       border-radius: 8px;
       cursor: pointer;
       transition: background-color 0.3s;
+      margin-right: 10px; /* Adds space between the buttons */
     }
 
     button:hover {
       background-color: #0056b3;
+    }
+
+    .button-container {
+      display: flex;
+      justify-content: center; /* Aligns buttons to the center */
+      gap: 10px; /* Optional: space between buttons */
+      margin-bottom: 20px;
+    }
+
+    .graph-container {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    #grafico {
+      width: 100%; /* Make the graph take the full container width */
+      height: auto; /* Maintain aspect ratio */
+      max-width: 350px; /* Prevents the graph from getting too large */
+      margin: 0 auto;
     }
 
     p {
@@ -65,15 +86,255 @@
       font-weight: bold;
       color: #007BFF;
     }
+
+    .screen {
+      display: none;
+    }
+
+    .active {
+      display: block;
+    }
+
+    .comments-container {
+      margin-top: 20px;
+      text-align: left;
+    }
+
+    .comments-container h3 {
+      font-size: 18px;
+      color: #007BFF;
+    }
+
+    .comment {
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background-color: #f0f4f8;
+      border: 1px solid #ccc;
+    }
+
+    .positive {
+      background-color: #d4edda; /* Greenish */
+    }
+
+    .neutral {
+      background-color: #f8f9fa; /* Grayish */
+    }
+
+    .negative {
+      background-color: #f8d7da; /* Red-ish */
+    }
+
+    .classify-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .classify-button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: white;
+    }
+
+    .positive-button {
+      background-color: #28a745;
+    }
+
+    .neutral-button {
+      background-color: #6c757d;
+    }
+
+    .negative-button {
+      background-color: #dc3545;
+    }
+
+    .positive-button:hover {
+      background-color: #218838;
+    }
+
+    .neutral-button:hover {
+      background-color: #5a6268;
+    }
+
+    .negative-button:hover {
+      background-color: #c82333;
+    }
+
+    #periodo {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    /* Spinner container at the bottom center of the container */
+    #loading-spinner {
+      display: none;  /* Hidden initially */
+      position: relative;  /* Positioning context for the spinner */
+      text-align: center;
+      margin-top: 20px;  /* Spacing between the button and the spinner */
+      width: 100%;  /* Ensures it's centered under the button */
+      height: 50px; /* Ensure the height is enough to accommodate the spinner */
+    }
+
+    /* Spinner styling */
+    .spinner {
+      position: absolute; /* Position relative to the #loading-spinner */
+      top: 50%;  /* Center the spinner vertically */
+      left: 42%;  /* Center the spinner horizontally */
+      transform: translate(-50%, -50%); /* Adjust to truly center it */
+      border: 4px solid #f3f3f3; /* Light grey background */
+      border-top: 4px solid #007BFF; /* Blue color for the spinning part */
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 2s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
   </style>
-  <script src="/static/script.js" defer></script>
+  <script>
+    function switchScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(screen => screen.classList.remove('active'));
+      document.getElementById(screenId).classList.add('active');
+    }
+
+    async function classificarTexto() {
+      const texto = document.getElementById('texto').value;
+
+      const resposta = await fetch('/classificar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ texto })
+      });
+
+      const resultado = await resposta.json();
+      document.getElementById('resultado').textContent = resultado.classificacao;
+    }
+
+    let comments = {};
+
+    async function scrapingClassificar() {
+      // Show loading spinner while the classification is in progress
+      document.getElementById('loading-spinner').style.display = 'block';
+
+      const palavra = document.getElementById('palavra').value;
+      const periodo = document.getElementById('periodo').value;
+
+      const resposta = await fetch('/scraping_classificar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ palavra, periodo })
+      });
+
+      const resultado = await resposta.json();
+      comments = resultado.classificacoes;  // Store comments per classification
+
+      const graficoBase64 = resultado.grafico;
+      
+      // Display the graph
+      const graficoElement = document.getElementById('grafico');
+      graficoElement.src = `data:image/png;base64,${graficoBase64}`;
+      graficoElement.style.display = 'block';  // Make the graph visible
+
+      // Show the classification buttons after the graph is displayed
+      document.getElementById('classify-buttons').style.display = 'flex';  // Show the buttons
+
+      // Hide the loading spinner now that the classification is done
+      document.getElementById('loading-spinner').style.display = 'none';
+
+      // Display classification counts
+      let text = '';
+      for (let [key, value] of Object.entries(comments)) {
+        text += `${key}: ${value.length} <br>`;
+      }
+      document.getElementById('classificacoes').innerHTML = text;
+    }
+
+    function showComments(classification) {
+      const container = document.getElementById('comments-list');
+      container.innerHTML = ''; // Clear existing comments
+
+      // Get the first 3 comments of the selected classification
+      const selectedComments = comments[classification].slice(0, 3);
+      
+      if (selectedComments.length === 0) {
+        container.innerHTML = `<p>Sem comentários para essa classificação.</p>`;
+      } else {
+        selectedComments.forEach(comment => {
+          const div = document.createElement('div');
+          div.classList.add('comment', classification);
+          div.textContent = comment;
+          container.appendChild(div);
+        });
+      }
+    }
+  </script>
 </head>
 <body>
   <div class="container">
-    <h1>Classificador de Texto</h1>
-    <textarea id="texto" placeholder="Digite seu texto aqui..."></textarea><br>
-    <button onclick="classificarTexto()">Classificar</button>
-    <p><strong>Classificação:</strong> <span id="resultado">-</span></p>
+    <!-- Navigation buttons -->
+    <div class="button-container">
+      <button onclick="switchScreen('screen1')">Tela de Classificação de Texto</button>
+      <button onclick="switchScreen('screen2')">Tela de Web Scraping</button>
+    </div>
+
+    <!-- Screen 1: Classificação de Texto -->
+    <div id="screen1" class="screen active">
+      <h1>Classificador de Texto</h1>
+      <textarea id="texto" placeholder="Digite seu texto aqui..."></textarea><br>
+      <button onclick="classificarTexto()">Classificar</button>
+      <p><strong>Classificação:</strong> <span id="resultado">-</span></p>
+    </div>
+
+    <!-- Screen 2: Web Scraping e Classificação -->
+    <div id="screen2" class="screen">
+      <h1>Classificação de Comentários</h1>
+      <input id="palavra" placeholder="Digite uma palavra para buscar..."><br>
+
+      <!-- Time period dropdown -->
+      <select id="periodo">
+        <option value="last_week">Última semana</option>
+        <option value="last_month">Último mês</option>
+        <option value="last_year">Último ano</option>
+      </select><br>
+
+      <button onclick="scrapingClassificar()">Classificar Comentários</button>
+
+      <!-- Loading spinner (hidden initially) -->
+      <div id="loading-spinner">
+        <div class="spinner"></div>
+      </div>
+
+      <div class="graph-container">
+        <img id="grafico" style="display:none;" />
+        <div id="classificacoes"></div>
+      </div>
+
+      <!-- Classification buttons (hidden initially) -->
+      <div class="classify-buttons" id="classify-buttons" style="display: none;">
+        <button class="classify-button positive-button" onclick="showComments('Positivo')">Positivo</button>
+        <button class="classify-button neutral-button" onclick="showComments('Neutro')">Neutro</button>
+        <button class="classify-button negative-button" onclick="showComments('Negativo')">Negativo</button>
+      </div>
+
+      <!-- Comments list -->
+      <div id="comments-list" class="comments-container"></div>
+    </div>
   </div>
 </body>
 </html>
