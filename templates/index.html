@@ -246,11 +246,13 @@
 
       const graficoBase64 = resultado.grafico;
       
-      // Display the graph
-      const graficoElement = document.getElementById('grafico');
-      graficoElement.src = `data:image/png;base64,${graficoBase64}`;
-      graficoElement.style.display = 'block';  // Make the graph visible
-
+      if (comments.length() === 0){
+        // Display the graph
+        const graficoElement = document.getElementById('grafico');
+        graficoElement.src = `data:image/png;base64,${graficoBase64}`;
+        graficoElement.style.display = 'block';  // Make the graph visible
+      }
+      
       // Show the classification buttons after the graph is displayed
       document.getElementById('classify-buttons').style.display = 'flex';  // Show the buttons
 

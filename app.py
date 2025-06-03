@@ -1,22 +1,22 @@
 from flask import Flask, request, jsonify, render_template
-from lexico import Lexico
+from classificador import Classificador
 import requests
 import matplotlib.pyplot as plt
 import io
 import base64
 import praw
 from datetime import datetime, timedelta
+import joblib
+from langdetect import detect
 
 app = Flask(__name__)
 
 # --- Reddit API Setup (PRAW) ---
-def fetch_reddit_comments(subreddit='all', palavra='', periodo=''):
-    # Setup Reddit API client using PRAW
-    reddit = praw.Reddit(client_id='Gw-kGHFca7xMD6ibdMHuIg',  # Replace with your client ID
-                         client_secret='o_5CQ48lubVpOodH2hTCeGr-pFSI0g',  # Replace with your client secret
-                         user_agent="my_reddit_scraper/0.1 by my_username")  # Replace with your user agent
+def fetch_reddit_comments(subreddit = 'all', palavra='', periodo=''):
+    reddit = praw.Reddit(client_id='Gw-kGHFca7xMD6ibdMHuIg',
+                         client_secret='o_5CQ48lubVpOodH2hTCeGr-pFSI0g',
+                         user_agent="my_reddit_scraper/0.1 by my_username")
 
-    # Determine the time filter based on the 'periodo' (time filter)
     if periodo == 'last_week':
         time_filter = 'week'
     elif periodo == 'last_month':
@@ -24,19 +24,20 @@ def fetch_reddit_comments(subreddit='all', palavra='', periodo=''):
     elif periodo == 'last_year':
         time_filter = 'year'
     else:
-        time_filter = 'all'  # No time filter if not specified
+        time_filter = 'all'
 
-    # Search for posts containing 'palavra' in the title or body
-    search_results = reddit.subreddit(subreddit).search(palavra, sort='new', time_filter=time_filter, limit=50)
-    
+    # Search across all subreddits
+    search_results = reddit.subreddit(subreddit).search(palavra, sort='new', time_filter=time_filter, limit=20)
+
     comments = []
     for submission in search_results:
-        comments.append({
-            'title': submission.title,
-            'url': submission.url,
-            'score': submission.score,
-            'created': datetime.utcfromtimestamp(submission.created_utc)
-        })
+        if detect(submission.title) == 'pt':
+            comments.append({
+                'title': submission.title,
+                'url': submission.url,
+                'score': submission.score,
+                'created': datetime.utcfromtimestamp(submission.created_utc)
+            })
     
     return comments
 
@@ -121,8 +122,24 @@ def fetch_disqus_comments(palavra='', periodo=''):
 
 # --- Function to Generate Pie Chart ---
 def generate_pie_chart(classificacoes):
+    counts = [len(classificacoes['Positivo']), len(classificacoes['Negativo']), len(classificacoes['Neutro'])]
+
+    # Check if all counts are zero
+    if sum(counts) == 0:
+        # Return an empty or placeholder image, or handle gracefully
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, 'No data to display', horizontalalignment='center', verticalalignment='center', fontsize=14)
+        ax.axis('off')
+
+        img_io = io.BytesIO()
+        plt.savefig(img_io, format='png')
+        img_io.seek(0)
+        img_base64 = base64.b64encode(img_io.read()).decode('utf-8')
+        plt.close(fig)
+        return img_base64
+
     fig, ax = plt.subplots()
-    ax.pie([len(classificacoes['Positivo']), len(classificacoes['Negativo']), len(classificacoes['Neutro'])],
+    ax.pie(counts,
            labels=['Positivo', 'Negativo', 'Neutro'],
            autopct='%1.1f%%', startangle=90)
     ax.axis('equal')
@@ -131,6 +148,7 @@ def generate_pie_chart(classificacoes):
     plt.savefig(img_io, format='png')
     img_io.seek(0)
     img_base64 = base64.b64encode(img_io.read()).decode('utf-8')
+    plt.close(fig)  # Close figure to free memory
 
     return img_base64
 
@@ -147,11 +165,14 @@ def scrape_and_classify_data(palavra='', periodo=''):
     # Classify data
     classificacoes = {'Positivo': [], 'Negativo': [], 'Neutro': []}
 
-    lexico = Lexico("Docs/LIWC.txt")
+    classificador = Classificador("Docs/LIWC.txt")
+
+    clf = joblib.load('sentiment_model.pkl')
+    vectorizer = joblib.load('tfidf_vectorizer.pkl')
 
     for item in all_data:
         # Here we classify based on the 'title' (it can be adjusted to include other fields)
-        classificacao = lexico.classic_classification(item['title'])
+        classificacao = classificador.model_classification(item['title'], clf, vectorizer)
         classificacoes[classificacao].append(item['title'])
 
     # Generate pie chart image in base64 format
@@ -168,9 +189,12 @@ def classificar():
     data = request.json
     texto = data.get('texto', '')
 
-    lexico = Lexico("Docs/LIWC.txt")
+    classificador = Classificador("Docs/LIWC.txt")
 
-    classificacao = lexico.classic_classification(texto)
+    clf = joblib.load('sentiment_model.pkl')
+    vectorizer = joblib.load('tfidf_vectorizer.pkl')
+
+    classificacao = classificador.model_classification(texto, clf, vectorizer)
 
     return jsonify({'classificacao': classificacao})
 

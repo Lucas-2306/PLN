@@ -9,3 +9,7 @@ flask
 praw
 requests
 matplotlib
+transformers
+torch
+joblib
+langdetect
