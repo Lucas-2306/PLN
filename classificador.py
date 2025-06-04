@@ -1,5 +1,5 @@
 import numpy
-import pandas
+import pandas as pd
 import scipy
 import spacy
 import sklearn
@@ -15,13 +15,14 @@ from Modules.stopword import Stopword_RMV
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import torch.nn.functional as F
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import LinearSVC
+from sklearn.pipeline import Pipeline
 from sklearn.metrics import classification_report
 import joblib
-
 
 class Classificador:
 
@@ -186,44 +187,69 @@ class Classificador:
 
         return sentimentos[predicted]
 
-    def model_training_classification(self, nome_arquivo, num_each_class = 1000):
+    def model_training_classification(self, nome_arquivo, num_each_class=1000):
+        # Carregar o dataset
+        df = pd.read_csv(nome_arquivo)  # deve conter colunas 'Text' e 'Classificacao'
 
-        # Load your dataset
-        df = pd.read_csv(nome_arquivo)  # columns: 'text', 'label'
+        # Balancear o número de exemplos por classe
+        df = df.groupby('Classificacao').apply(lambda x: x.sample(n=num_each_class, random_state=42)).reset_index(drop=True)
 
-        # Assume df is your DataFrame and 'your_column' is the column with 3 classes
-        y = num_each_class  # Or whatever number you want
-        df = df.groupby('Classificacao').apply(lambda x: x.sample(n=y, random_state=42)).reset_index(drop=True)
-
-        # Optional: basic preprocessing
-        #for text in df["Text"]:
-        #    self.tokenization(text)
-        #    self.remove_stopword()
-        #    text = ' '.join(self.tokens)
-
-        # Split data
+        # Separar em treino e teste
         X_train, X_test, y_train, y_test = train_test_split(df["Text"], df["Classificacao"], test_size=0.2, random_state=42)
 
-        # Vectorize text
-        vectorizer = TfidfVectorizer(max_features=5000)
-        X_train_vec = vectorizer.fit_transform(X_train)
-        X_test_vec = vectorizer.transform(X_test)
+        # Definir o pipeline e os parâmetros para grid search
+        pipelines = {
+            'LogisticRegression': Pipeline([
+                ('vect', TfidfVectorizer()), 
+                ('clf', LogisticRegression(max_iter=1000))
+            ]),
+            'RandomForest': Pipeline([
+                ('vect', CountVectorizer()), 
+                ('clf', RandomForestClassifier())
+            ]),
+            'LinearSVC': Pipeline([
+                ('vect', TfidfVectorizer()), 
+                ('clf', LinearSVC())
+            ])
+        }
 
-        # Train classifier
-        clf = LogisticRegression()
-        clf.fit(X_train_vec, y_train)
+        param_grids = {
+            'LogisticRegression': {
+                'vect__ngram_range': [(1, 1), (1, 2)],
+                'vect__max_features': [3000, 5000],
+                'clf__C': [0.1, 1, 10]
+            },
+            'RandomForest': {
+                'vect__ngram_range': [(1, 1)],
+                'vect__max_features': [3000],
+                'clf__n_estimators': [100, 200],
+                'clf__max_depth': [None, 20]
+            },
+            'LinearSVC': {
+                'vect__ngram_range': [(1, 1), (1, 2)],
+                'vect__max_features': [3000, 5000],
+                'clf__C': [0.1, 1, 10]
+            }
+        }
 
-        # Evaluate
-        y_pred = clf.predict(X_test_vec)
-        print(classification_report(y_test, y_pred))
+        best_models = {}
 
-        # Save model and vectorizer
-        joblib.dump(clf, 'sentiment_model.pkl')
-        joblib.dump(vectorizer, 'tfidf_vectorizer.pkl')
+        for name in pipelines:
+            print(f"\nRodando GridSearch para {name}...")
+            grid = GridSearchCV(pipelines[name], param_grids[name], cv=3, n_jobs=-1, scoring='f1_macro')
+            grid.fit(X_train, y_train)
+            
+            print(f"\nMelhores parâmetros para {name}: {grid.best_params_}")
+            y_pred = grid.predict(X_test)
+            print(f"\nRelatório de Classificação para {name}:\n", classification_report(y_test, y_pred))
 
-        
-    def model_classification(self, text, clf, vectorizer):
+            best_models[name] = grid.best_estimator_
 
-        vec = vectorizer.transform([text])
+        # Salvar o melhor modelo (exemplo: LogisticRegression)
+        final_model = best_models['LogisticRegression']
+        joblib.dump(final_model, 'final_sentiment_model.pkl')
 
-        return clf.predict(vec)[0]
+        print("\nModelo salvo como 'final_sentiment_model.pkl'.")
+
+    def model_classification(self, texto, pipeline):
+        return pipeline.predict([texto])[0]

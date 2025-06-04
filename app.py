@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify, render_template
 from classificador import Classificador
 import requests
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import io
 import base64
@@ -41,41 +43,52 @@ def fetch_reddit_comments(subreddit = 'all', palavra='', periodo=''):
     
     return comments
 
-# --- GDELT API Setup ---
 def fetch_gdelt_news(palavra='', periodo=''):
-    # GDELT Global News API URL
-    url = 'https://api.gdeltproject.org/api/v2/doc/doc?query=*&mode=ArtList&format=json&maxrecords=50'
+    from datetime import datetime, timedelta
+    import requests
 
-    # Make the request to GDELT API
-    response = requests.get(url)
-    data = response.json()
+    query = palavra if palavra else '*'
+    url = (
+        f"https://api.gdeltproject.org/api/v2/doc/doc?"
+        f"query={query}&mode=ArtList&format=json&maxrecords=5&sort=DateDesc"
+    )
 
-    # Extract relevant news data
-    news = []
-    for article in data['articles']:
-        if palavra.lower() in article['title'].lower():
-            # Filter by 'periodo' (time period)
-            published_time = datetime.strptime(article['published'], "%Y-%m-%d %H:%M:%S")
-            if periodo:
-                if periodo == 'last_week' and published_time >= datetime.utcnow() - timedelta(weeks=1):
-                    news.append({
-                        'title': article['title'],
-                        'url': article['url'],
-                        'published': published_time
-                    })
-                elif periodo == 'last_month' and published_time >= datetime.utcnow() - timedelta(weeks=4):
-                    news.append({
-                        'title': article['title'],
-                        'url': article['url'],
-                        'published': published_time
-                    })
-            else:
-                news.append({
-                    'title': article['title'],
-                    'url': article['url'],
-                    'published': published_time
-                })
-    return news
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 429:
+            print("⚠️ Erro 429: limite da GDELT atingido")
+            return []
+        elif response.status_code != 200:
+            print(f"Erro GDELT: {response.status_code}")
+            return []
+
+        data = response.json()
+    except Exception as e:
+        print(f"Erro na chamada GDELT: {e}")
+        return []
+
+    articles = data.get('articles', [])
+    resultados = []
+
+    for article in articles:
+        pub_str = article.get('seendate', '')
+        try:
+            pub_date = datetime.strptime(pub_str, "%Y%m%d%H%M%S")
+        except:
+            continue
+
+        if periodo == 'last_week' and pub_date < datetime.utcnow() - timedelta(weeks=1):
+            continue
+        if periodo == 'last_month' and pub_date < datetime.utcnow() - timedelta(weeks=4):
+            continue
+
+        resultados.append({
+            'title': article.get('title', ''),
+            'url': article.get('url', ''),
+            'published': pub_date
+        })
+
+    return resultados
 
 # --- Disqus API Setup ---
 def fetch_disqus_comments(palavra='', periodo=''):
@@ -154,30 +167,27 @@ def generate_pie_chart(classificacoes):
 
 # --- Function to Scrape, Filter, and Classify Data ---
 def scrape_and_classify_data(palavra='', periodo=''):
-    # Fetch data from APIs
+    print("Buscando Reddit...")
     reddit_comments = fetch_reddit_comments('all', palavra, periodo)
-    # gdelt_news = fetch_gdelt_news(palavra, periodo)
-    # disqus_comments = fetch_disqus_comments(palavra, periodo)
+    
+    print("Buscando GDELT...")
+    gdelt_news = fetch_gdelt_news(palavra, periodo)
 
-    # Combine all comments and news into one list
-    all_data = reddit_comments # + gdelt_news + disqus_comments
+    print("Combinando dados...")
+    all_data = reddit_comments + gdelt_news
 
-    # Classify data
+    print(f"Total de textos a classificar: {len(all_data)}")
     classificacoes = {'Positivo': [], 'Negativo': [], 'Neutro': []}
-
     classificador = Classificador("Docs/LIWC.txt")
+    model_pipeline = joblib.load('final_sentiment_model.pkl')
 
-    clf = joblib.load('sentiment_model.pkl')
-    vectorizer = joblib.load('tfidf_vectorizer.pkl')
+    for i, item in enumerate(all_data):
+        texto = item.get('title', '')
+        print(f"Classificando {i+1}/{len(all_data)}: {texto[:40]}...")
+        classificacao = classificador.model_classification(texto, model_pipeline)
+        classificacoes[classificacao].append(texto)
 
-    for item in all_data:
-        # Here we classify based on the 'title' (it can be adjusted to include other fields)
-        classificacao = classificador.model_classification(item['title'], clf, vectorizer)
-        classificacoes[classificacao].append(item['title'])
-
-    # Generate pie chart image in base64 format
     img_base64 = generate_pie_chart(classificacoes)
-
     return classificacoes, img_base64
 
 @app.route('/')
@@ -191,10 +201,10 @@ def classificar():
 
     classificador = Classificador("Docs/LIWC.txt")
 
-    clf = joblib.load('sentiment_model.pkl')
-    vectorizer = joblib.load('tfidf_vectorizer.pkl')
+    # Carregar pipeline salvo (modelo + vetorizador)
+    model_pipeline = joblib.load('final_sentiment_model.pkl')
 
-    classificacao = classificador.model_classification(texto, clf, vectorizer)
+    classificacao = classificador.model_classification(texto, model_pipeline)
 
     return jsonify({'classificacao': classificacao})
 

@@ -227,7 +227,6 @@
     let comments = {};
 
     async function scrapingClassificar() {
-      // Show loading spinner while the classification is in progress
       document.getElementById('loading-spinner').style.display = 'block';
 
       const palavra = document.getElementById('palavra').value;
@@ -235,36 +234,39 @@
 
       const resposta = await fetch('/scraping_classificar', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ palavra, periodo })
       });
 
       const resultado = await resposta.json();
-      comments = resultado.classificacoes;  // Store comments per classification
-
+      comments = resultado.classificacoes;
       const graficoBase64 = resultado.grafico;
-      
-      if (comments.length() === 0){
-        // Display the graph
-        const graficoElement = document.getElementById('grafico');
-        graficoElement.src = `data:image/png;base64,${graficoBase64}`;
-        graficoElement.style.display = 'block';  // Make the graph visible
+
+      // Verifica se há comentários em todas as classificações
+      if (!comments || Object.values(comments).every(arr => arr.length === 0)) {
+        document.getElementById('grafico').style.display = 'none';
+        document.getElementById('classify-buttons').style.display = 'none';
+        document.getElementById('classificacoes').innerHTML = '<p>Nenhum comentário classificado.</p>';
+        document.getElementById('loading-spinner').style.display = 'none';
+        return;
       }
-      
-      // Show the classification buttons after the graph is displayed
-      document.getElementById('classify-buttons').style.display = 'flex';  // Show the buttons
 
-      // Hide the loading spinner now that the classification is done
-      document.getElementById('loading-spinner').style.display = 'none';
+      // Atualiza gráfico
+      const graficoElement = document.getElementById('grafico');
+      graficoElement.src = `data:image/png;base64,${graficoBase64}`;
+      graficoElement.style.display = 'block';
 
-      // Display classification counts
+      // Mostra botões
+      document.getElementById('classify-buttons').style.display = 'flex';
+
+      // Atualiza contagem de classificações
       let text = '';
       for (let [key, value] of Object.entries(comments)) {
         text += `${key}: ${value.length} <br>`;
       }
       document.getElementById('classificacoes').innerHTML = text;
+
+      document.getElementById('loading-spinner').style.display = 'none';
     }
 
     function showComments(classification) {
