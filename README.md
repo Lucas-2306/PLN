@@ -6,7 +6,7 @@ Criar uma interface que permitisse o usuário definir um objeto (pessoa, assunto
 
 Esses comentários relacionados aquele objeto são então classificados em positivo, negativo ou neutro, baseado em um modelo treinado no corpus B2W. O resultado final do sentimento da "população" acerca daquele objeto é então informado ao usuário.
 
-Nossa ideia era buscar fazer um sistema semelhante ao do Brand24, porém bem mais simples. Permitindo ao usuário obter informações de como está o sentimento público acerca de algo.
+Esse trabalho foi inspirado no sistema do Brand24, porém bem mais simples. Permitindo ao usuário obter informações de como está o sentimento público acerca de algo.
 
 ### Como começar
 
@@ -22,7 +22,7 @@ myenv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## 📥 Download do modelo spaCy
+## Download do modelo spaCy
 
 Para que a lematização funcione corretamente, é necessário baixar o modelo de português do spaCy. Após instalar as dependências, execute o seguinte comando no terminal:
 
